@@ -1,12 +1,15 @@
 package command_factory_test
 
 import (
+	"errors"
 	"os"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gbytes"
 
+	"github.com/cloudfoundry-incubator/lattice/ltc/app_examiner"
+	"github.com/cloudfoundry-incubator/lattice/ltc/app_examiner/fake_app_examiner"
 	"github.com/cloudfoundry-incubator/lattice/ltc/exit_handler"
 	"github.com/cloudfoundry-incubator/lattice/ltc/exit_handler/fake_exit_handler"
 	"github.com/cloudfoundry-incubator/lattice/ltc/logs/command_factory"
@@ -37,10 +40,12 @@ var _ = Describe("CommandFactory", func() {
 	Describe("LogsCommand", func() {
 
 		var logsCommand cli.Command
+		var appExaminer *fake_app_examiner.FakeAppExaminer
 
 		BeforeEach(func() {
 			commandFactory := command_factory.NewLogsCommandFactory(terminalUI, fakeTailedLogsOutputter, exitHandler)
-			logsCommand = commandFactory.MakeLogsCommand()
+			appExaminer = &fake_app_examiner.FakeAppExaminer{}
+			logsCommand = commandFactory.MakeLogsCommand(appExaminer)
 		})
 
 		It("tails logs", func() {
@@ -58,6 +63,17 @@ var _ = Describe("CommandFactory", func() {
 			test_helpers.ExecuteCommandWithArgs(logsCommand, []string{})
 
 			Expect(outputBuffer).To(test_helpers.Say("Incorrect Usage"))
+			Expect(fakeTailedLogsOutputter.OutputTailedLogsCallCount()).To(Equal(0))
+		})
+
+		It("handles non existent appguids", func() {
+			args := []string{
+				"non_existent_app",
+			}
+			appExaminer.AppStatusReturns(app_examiner.AppInfo{}, errors.New("App not found."))
+			test_helpers.ExecuteCommandWithArgs(logsCommand, args)
+
+			Expect(outputBuffer).To(test_helpers.Say("App not found"))
 			Expect(fakeTailedLogsOutputter.OutputTailedLogsCallCount()).To(Equal(0))
 		})
 	})
