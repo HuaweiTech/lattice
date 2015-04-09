@@ -1206,10 +1206,10 @@ var _ = Describe("CommandFactory", func() {
 
 				Eventually(commandFinishChan).Should(BeClosed())
 
-				Expect(outputBuffer).To(test_helpers.Say(colors.Red("Timed out waiting for the container to shut down.")))
+				Expect(outputBuffer).To(test_helpers.Say(colors.Red("Timed out waiting for the containers to shut down.")))
 				Expect(outputBuffer).To(test_helpers.SayNewLine())
-				Expect(outputBuffer).To(test_helpers.SayLine("Lattice will continue to shut down your container in the background."))
-				Expect(outputBuffer).To(test_helpers.SayLine("To view status:\n\tltc status cool-web-app"))
+				Expect(outputBuffer).To(test_helpers.SayLine("Lattice will continue to shut down your containers in the background."))
+				Expect(outputBuffer).To(test_helpers.SayLine("To view status:\n\tltc status for rest of the apps cool-web-app "))
 			})
 		})
 
@@ -1221,7 +1221,7 @@ var _ = Describe("CommandFactory", func() {
 
 				test_helpers.ExecuteCommandWithArgs(removeCommand, args)
 
-				Expect(outputBuffer).To(test_helpers.Say("Incorrect Usage: App Name required"))
+				Expect(outputBuffer).To(test_helpers.Say("Incorrect Usage: App Names required"))
 				Expect(appRunner.RemoveAppCallCount()).To(Equal(0))
 			})
 		})
@@ -1252,12 +1252,95 @@ var _ = Describe("CommandFactory", func() {
 
 				Eventually(commandFinishChan).Should(BeClosed())
 
-				Expect(outputBuffer).To(test_helpers.Say(colors.Red("Timed out waiting for the container to shut down.")))
+				Expect(outputBuffer).To(test_helpers.Say(colors.Red("Timed out waiting for the containers to shut down.")))
 				Expect(outputBuffer).To(test_helpers.SayNewLine())
-				Expect(outputBuffer).To(test_helpers.SayLine("Lattice will continue to shut down your container in the background."))
-				Expect(outputBuffer).To(test_helpers.SayLine("To view status:\n\tltc status cool-web-app"))
+				Expect(outputBuffer).To(test_helpers.SayLine("Lattice will continue to shut down your containers in the background."))
+				Expect(outputBuffer).To(test_helpers.SayLine("To view status:\n\tltc status for rest of the apps cool-web-app "))
 			})
 		})
 
+		Context("when the multiple apps are removed", func() {
+			It("it removes all the apps", func() {
+				args := []string{
+					"A",
+					"B",
+					"C",
+				}
+
+				test_helpers.AsyncExecuteCommandWithArgs(removeCommand, args)
+
+				Eventually(outputBuffer).Should(test_helpers.Say("Removing"))
+				Eventually(outputBuffer).Should(test_helpers.SayNewLine())
+				// We won't know the order in which the apps are removed it could be app1,app2,app3 or app2,app3,app1 so we look for three sucess messages instead
+				Eventually(outputBuffer).Should(test_helpers.Say(("Successfully Removed")))
+				Eventually(outputBuffer).Should(test_helpers.Say(("Successfully Removed")))
+				Eventually(outputBuffer).Should(test_helpers.Say(("Successfully Removed")))
+
+				Expect(appRunner.RemoveAppCallCount()).To(Equal(3))
+				Expect(appRunner.RemoveAppArgsForCall(0)).To(Equal("A"))
+				Expect(appRunner.RemoveAppArgsForCall(1)).To(Equal("B"))
+				Expect(appRunner.RemoveAppArgsForCall(2)).To(Equal("C"))
+			})
+
+			It("it removes valid apps and throws error for invalid ones", func() {
+				args := []string{
+					"A",
+					"B",
+					"invalidapp1",
+					"C",
+					"invalidapp2",
+				}
+				appRunner.RemoveAppStub = func(name string) error {
+					if name == "invalidapp1" || name == "invalidapp2" {
+						return errors.New("Error Stopping App: " + name + " is not started. Please start an app first")
+					}
+					return nil
+				}
+
+				test_helpers.AsyncExecuteCommandWithArgs(removeCommand, args)
+				Eventually(outputBuffer).Should(test_helpers.Say("Error Stopping App: invalidapp1 is not started. Please start an app first"))
+				Eventually(outputBuffer).Should(test_helpers.Say("Error Stopping App: invalidapp2 is not started. Please start an app first"))
+
+				// We won't know the order in which the apps are removed/printed it could be app1,app2,app3 or app2,app3,app1 so we look for three sucess messages instead
+				Eventually(outputBuffer).Should(test_helpers.Say("Removing"))
+				Eventually(outputBuffer).Should(test_helpers.SayNewLine())
+				Eventually(outputBuffer).Should(test_helpers.Say(("Successfully Removed")))
+				Eventually(outputBuffer).Should(test_helpers.Say(("Successfully Removed")))
+				Eventually(outputBuffer).Should(test_helpers.Say(("Successfully Removed")))
+
+				Expect(appRunner.RemoveAppCallCount()).To(Equal(5))
+				Expect(appRunner.RemoveAppArgsForCall(0)).To(Equal("A"))
+				Expect(appRunner.RemoveAppArgsForCall(1)).To(Equal("B"))
+				Expect(appRunner.RemoveAppArgsForCall(2)).To(Equal("invalidapp1"))
+				Expect(appRunner.RemoveAppArgsForCall(3)).To(Equal("C"))
+				Expect(appRunner.RemoveAppArgsForCall(4)).To(Equal("invalidapp2"))
+			})
+			It("When the apps Names are repeated", func() {
+				args := []string{
+					"app",
+					"app",
+					"app",
+					"app",
+					"app",
+					"app",
+					"app",
+					"app",
+					"app",
+					"app",
+					"app",
+					"app",
+				}
+
+				test_helpers.AsyncExecuteCommandWithArgs(removeCommand, args)
+
+				Eventually(outputBuffer).Should(test_helpers.Say("Removing app"))
+				Expect(outputBuffer).To(test_helpers.SayNewLine())
+				Eventually(outputBuffer).Should(test_helpers.Say(("Successfully Removed app")))
+
+				Expect(appRunner.RemoveAppCallCount()).To(Equal(1))
+				Expect(appRunner.RemoveAppArgsForCall(0)).To(Equal("app"))
+
+			})
+		})
 	})
 })

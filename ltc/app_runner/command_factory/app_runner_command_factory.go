@@ -220,8 +220,8 @@ func (factory *AppRunnerCommandFactory) MakeRemoveAppCommand() cli.Command {
 	var removeAppCommand = cli.Command{
 		Name:        "remove",
 		Aliases:     []string{"rm"},
-		Description: "ltc remove APP_NAME",
-		Usage:       "Stops and removes a docker app from lattice",
+		Description: "ltc remove APP_NAME1 APP_NAME2 APP_NAME3....",
+		Usage:       "Stops and removes a docker app(s) from lattice",
 		Action:      factory.removeApp,
 		Flags:       createFlags,
 	}
@@ -441,34 +441,114 @@ func (factory *AppRunnerCommandFactory) setAppInstances(pollTimeout time.Duratio
 }
 
 func (factory *AppRunnerCommandFactory) removeApp(c *cli.Context) {
-	appName := c.Args().First()
+	appNames := c.Args()
+	activeApps := make(map[string]bool)
+	crntStatus := make(chan string)
+
 	timeoutFlag := c.Duration("timeout")
 
-	if appName == "" {
-		factory.ui.IncorrectUsage("App Name required")
+	switch len(appNames) {
+	case 0:
+		factory.ui.IncorrectUsage("App Names required")
+		return
+	case 1:
+		if appNames[0] == "" {
+			//sometimes ltc rm APP_NAME "" would fail
+			factory.ui.IncorrectUsage("App Names required")
+			return
+		}
+	}
+
+	for _, appName := range appNames {
+		_, ok := activeApps[appName]
+		if !ok {
+			err := factory.appRunner.RemoveApp(appName)
+			if err != nil {
+				factory.ui.SayLine(colors.Red(fmt.Sprintf("Error Stopping App: %s", err)))
+				activeApps[appName] = false
+			} else {
+				//Collect valid app names
+				//We use map because order of apps is not improtant as they may be removed asynchronously
+				activeApps[appName] = true
+			}
+		}
+	}
+
+	// There is nothing to remove exit now.
+	if mapLen(activeApps) == 0 {
 		return
 	}
 
-	err := factory.appRunner.RemoveApp(appName)
-	if err != nil {
-		factory.ui.Say(fmt.Sprintf("Error Stopping App: %s", err))
-		return
-	}
+	factory.ui.SayLine(fmt.Sprintf("Removing %s", mapKeys(activeApps)))
 
-	factory.ui.Say(fmt.Sprintf("Removing %s", appName))
-	ok := factory.pollUntilSuccess(timeoutFlag, func() bool {
+	// go poll for all the apps
+	go factory.pollMultiUntilSuccess(timeoutFlag, func(appName string) bool {
 		appExists, err := factory.appExaminer.AppExists(appName)
 		return err == nil && !appExists
-	}, true)
+	}, true, activeApps, crntStatus)
 
-	if ok {
-		factory.ui.Say(colors.Green("Successfully Removed " + appName + "."))
-	} else {
-		factory.ui.Say(colors.Red("Timed out waiting for the container to shut down."))
-		factory.ui.NewLine()
-		factory.ui.SayLine("Lattice will continue to shut down your container in the background.")
-		factory.ui.SayLine(fmt.Sprintf("To view status:\n\tltc status %s", appName))
+	for {
+		rmdApp, ok := <-crntStatus
+		if ok {
+			factory.ui.Say(colors.Green("Successfully Removed " + rmdApp + "."))
+		} else {
+			// The channel is closed so lets continue.
+			break
+		}
 	}
+	if mapLen(activeApps) > 0 {
+		factory.ui.Say(colors.Red("Timed out waiting for the containers to shut down."))
+		factory.ui.NewLine()
+		factory.ui.SayLine("Lattice will continue to shut down your containers in the background.")
+		factory.ui.SayLine(fmt.Sprintf("To view status:\n\tltc status for rest of the apps %s", mapKeys(activeApps)))
+	}
+}
+
+func mapKeys(m map[string]bool) string {
+	keys := ""
+	for key := range m {
+		if m[key] {
+			keys += key + " "
+		}
+	}
+	return keys
+}
+
+func mapLen(m map[string]bool) int {
+	mlen := 0
+	for key := range m {
+		if m[key] {
+			mlen++
+		}
+	}
+	return mlen
+}
+
+func (factory *AppRunnerCommandFactory) pollMultiUntilSuccess(pollTimeout time.Duration, pollingFunc func(string) bool, outputProgress bool, list map[string]bool, update chan string) (ok bool) {
+	defer close(update)
+	startingTime := factory.clock.Now()
+	for startingTime.Add(pollTimeout).After(factory.clock.Now()) {
+		for appName := range list {
+			if list[appName] {
+				if result := pollingFunc(appName); result {
+					factory.ui.NewLine()
+					update <- appName
+					delete(list, appName)
+				}
+			} else {
+				delete(list, appName)
+			}
+		}
+		if len(list) == 0 {
+			break
+		}
+		if outputProgress {
+			factory.ui.Say(".")
+		}
+		factory.clock.Sleep(1 * time.Second)
+	}
+	factory.ui.NewLine()
+	return false
 }
 
 func (factory *AppRunnerCommandFactory) pollUntilSuccess(pollTimeout time.Duration, pollingFunc func() bool, outputProgress bool) (ok bool) {
