@@ -60,7 +60,7 @@ func (factory *logsCommandFactory) tailLogs(context *cli.Context) {
 	appGuid := context.Args().First()
 
 	if appGuid == "" {
-		factory.ui.SayIncorrectUsage("")
+		factory.ui.SayIncorrectUsage("APP_NAME required")
 		return
 	}
 
