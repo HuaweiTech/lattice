@@ -82,10 +82,20 @@ type CellInfo struct {
 	Containers       int
 }
 
+type TaskInfo struct {
+	TaskGuid      string
+	CellID        string
+	Failed        bool
+	FailureReason string
+	Result        string
+	State         string
+}
+
 //go:generate counterfeiter -o fake_app_examiner/fake_app_examiner.go . AppExaminer
 type AppExaminer interface {
 	ListApps() ([]AppInfo, error)
 	ListCells() ([]CellInfo, error)
+	ListTasks() ([]TaskInfo, error)
 	AppStatus(appName string) (AppInfo, error)
 	AppExists(name string) (bool, error)
 	RunningAppInstancesInfo(name string) (int, bool, error)
@@ -351,4 +361,24 @@ func sortCellKeys(allCells map[string]*CellInfo) []string {
 	sort.Strings(keys)
 
 	return keys
+}
+
+func (e *appExaminer) ListTasks() ([]TaskInfo, error) {
+	taskList, err := e.receptorClient.Tasks()
+	if err != nil {
+		return nil, err
+	}
+	taskInfoList := make([]TaskInfo, 0, len(taskList))
+	for _, task := range taskList {
+		taskInfo := TaskInfo{
+			TaskGuid:      task.TaskGuid,
+			CellID:        task.CellID,
+			Failed:        task.Failed,
+			FailureReason: task.FailureReason,
+			Result:        task.Result,
+			State:         task.State,
+		}
+		taskInfoList = append(taskInfoList, taskInfo)
+	}
+	return taskInfoList, err
 }
