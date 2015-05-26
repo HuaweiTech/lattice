@@ -364,21 +364,21 @@ func sortCellKeys(allCells map[string]*CellInfo) []string {
 }
 
 func (e *appExaminer) ListTasks() ([]TaskInfo, error) {
-	tasksList, err := e.receptorClient.Tasks()
+	taskList, err := e.receptorClient.Tasks()
 	if err != nil {
 		return nil, err
 	}
-	taskMap := make([]TaskInfo, 0, len(tasksList))
-	for _, tasks := range tasksList {
-		taskss := TaskInfo{
-			TaskGuid:      tasks.TaskGuid,
-			CellID:        tasks.CellID,
-			Failed:        tasks.Failed,
-			FailureReason: tasks.FailureReason,
-			Result:        tasks.Result,
-			State:         tasks.State,
+	taskInfoList := make([]TaskInfo, 0, len(taskList))
+	for _, task := range taskList {
+		taskInfo := TaskInfo{
+			TaskGuid:      task.TaskGuid,
+			CellID:        task.CellID,
+			Failed:        task.Failed,
+			FailureReason: task.FailureReason,
+			Result:        task.Result,
+			State:         task.State,
 		}
-		taskMap = append(taskMap, taskss)
+		taskInfoList = append(taskInfoList, taskInfo)
 	}
-	return taskMap, err
+	return taskInfoList, err
 }

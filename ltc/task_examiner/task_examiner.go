@@ -66,8 +66,11 @@ func (e *taskExaminer) TaskDelete(taskGuid string) error {
 		}
 		return nil
 	} else {
-		e.receptorClient.CancelTask(taskGuid)
-		err := e.receptorClient.DeleteTask(taskGuid)
+		err := e.receptorClient.CancelTask(taskGuid)
+		if err != nil {
+			return err
+		}
+		err = e.receptorClient.DeleteTask(taskGuid)
 		if err != nil {
 			return err
 		}
