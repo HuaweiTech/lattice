@@ -2,6 +2,8 @@ branches:
   only:
     - develop
     - master
+    - /^hw-issue-.*$/
+    - /^hwcf-issue-.*$/
 
 language: go
 go:
@@ -20,6 +22,9 @@ before_install:
 - go get -v github.com/tools/godep
 - go get -v github.com/onsi/ginkgo/ginkgo
 - go get -v github.com/mattn/goveralls
+- repo=`basename $PWD`; localDir=`dirname $PWD`; cfDir="`dirname $localDir`/cloudfoundry-incubator"
+- if [[ "$localDir" != "$cfDir" ]]; then mv "$localDir" "$cfDir"; cd ../../cloudfoundry-incubator/$repo; export TRAVIS_BUILD_DIR=`dirname $TRAVIS_BUILD_DIR`/$repo; fi
+
 after_success:
 - pushd ltc
 - 'echo "mode: set" > coverage.out'
