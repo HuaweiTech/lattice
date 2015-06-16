@@ -19,6 +19,7 @@ import (
 
 	"github.com/cloudfoundry-incubator/lattice/ltc/config"
 	"github.com/cloudfoundry-incubator/lattice/ltc/terminal/colors"
+	"github.com/cloudfoundry-incubator/lattice/ltc/test_helpers"
 	"github.com/nu7hatch/gouuid"
 )
 
@@ -135,6 +136,47 @@ func defineTheGinkgoTests(runner *integrationTestRunner, timeout time.Duration) 
 				Eventually(errorCheckForRoute(route), timeout, .5).ShouldNot(HaveOccurred())
 			})
 		})
+
+		Context("when desiring a Task", func() {
+
+			var (
+				tmpDir  string
+				tmpFile *os.File
+				err     error
+			)
+
+			BeforeEach(func() {
+
+				tmpDir = os.TempDir()
+				tmpFile, err = ioutil.TempFile(tmpDir, "tmp_json")
+
+				Expect(err).ToNot(HaveOccurred())
+				jsonContents := []byte(`{"task_guid": "some","domain": "banana","stack": "trusty","rootfs": "docker:///cloudfoundry/lattice-app","action":{"run" :{"args" : [],"path" : "/lattice-app","resource_limits" : {},"dir" : "/","env" : null}}}`)
+				ioutil.WriteFile(tmpFile.Name(), jsonContents, 0700)
+			})
+			AfterEach(func() {
+				runner.taskVerify(timeout, "some")
+			})
+
+			It("Submit, cancel, status, delete of a task", func() {
+				debugLogsStream := runner.streamDebugLogs(timeout)
+				defer func() { debugLogsStream.Terminate().Wait() }()
+
+				runner.submitTask(timeout, tmpFile.Name())
+
+				Eventually(debugLogsStream.Out, timeout).Should(gbytes.Say("rep.*cell-\\d+"))
+				Eventually(debugLogsStream.Out, timeout).Should(gbytes.Say("garden-linux.*cell-\\d+"))
+				debugLogsStream.Terminate().Wait()
+
+				runner.cancelTask(timeout, "some")
+
+				runner.Task(timeout, "some")
+
+				runner.deleteTask(timeout, "some")
+
+			})
+
+		})
 	})
 }
 
@@ -150,6 +192,42 @@ func (runner *integrationTestRunner) createDockerApp(timeout time.Duration, appN
 
 	Expect(session.Out).To(gbytes.Say(appName + " is now running."))
 	fmt.Fprintf(getStyledWriter("test"), "Yay! Created %s\n", appName)
+}
+
+func (runner *integrationTestRunner) submitTask(timeout time.Duration, appName string) {
+	fmt.Fprintf(getStyledWriter("test"), colors.PurpleUnderline(fmt.Sprintf("Attempting to submit task some"))+"\n")
+	createArgs := append([]string{"submit-task", appName})
+	command := runner.command(createArgs...)
+
+	session, err := gexec.Start(command, getStyledWriter("submit-task"), getStyledWriter("submit-task"))
+
+	Expect(err).ToNot(HaveOccurred())
+	expectExit(timeout, session)
+
+	Expect(session.Out).To(gbytes.Say("Successfully submitted some"))
+	fmt.Fprintf(getStyledWriter("test"), "Yay! Submitted task some\n")
+}
+
+func (runner *integrationTestRunner) Task(timeout time.Duration, args ...string) {
+	fmt.Fprintf(getStyledWriter("test"), colors.PurpleUnderline(fmt.Sprintf("Attempting to Display the status of a given task some"))+"\n")
+	createArgs := append([]string{"task", "some"})
+	command := runner.command(createArgs...)
+
+	session, err := gexec.Start(command, getStyledWriter("task"), getStyledWriter("task"))
+
+	Expect(err).ToNot(HaveOccurred())
+	expectExit(timeout, session)
+
+	Expect(session.Out).To(test_helpers.Say("Task Name"))
+	Expect(session.Out).To(test_helpers.Say("some"))
+	Expect(session.Out).To(test_helpers.Say("Cell ID"))
+	Expect(session.Out).To(test_helpers.Say("cell-01"))
+	Expect(session.Out).To(test_helpers.Say("Status"))
+	Expect(session.Out).To(test_helpers.Say("COMPLETED"))
+	Expect(session.Out).To(test_helpers.Say("Failure Reason"))
+	Expect(session.Out).To(test_helpers.Say("task was cancelled"))
+
+	fmt.Fprintf(getStyledWriter("test"), "Yay! Displays the status of a given task some\n")
 }
 
 func (runner *integrationTestRunner) streamLogs(timeout time.Duration, appName string, args ...string) *gexec.Session {
@@ -190,6 +268,38 @@ func (runner *integrationTestRunner) removeApp(timeout time.Duration, appName st
 
 	Expect(err).ToNot(HaveOccurred())
 	expectExit(timeout, session)
+}
+
+func (runner *integrationTestRunner) deleteTask(timeout time.Duration, appName string) {
+	fmt.Fprintf(getStyledWriter("test"), colors.PurpleUnderline(fmt.Sprintf("Attempting to delete the task some"))+"\n")
+	command := runner.command("delete-task", "some")
+
+	session, err := gexec.Start(command, getStyledWriter("delete-task"), getStyledWriter("delete-task"))
+
+	Expect(err).ToNot(HaveOccurred())
+	expectExit(timeout, session)
+
+	Expect(session.Out).To(gbytes.Say("OK"))
+}
+
+func (runner *integrationTestRunner) cancelTask(timeout time.Duration, appName string) {
+	fmt.Fprintf(getStyledWriter("test"), colors.PurpleUnderline(fmt.Sprintf("Attempting to cancel the task some"))+"\n")
+	command := runner.command("cancel-task", "some")
+
+	session, err := gexec.Start(command, getStyledWriter("cancel-task"), getStyledWriter("cancel-task"))
+
+	Expect(err).ToNot(HaveOccurred())
+	expectExit(timeout, session)
+}
+
+func (runner *integrationTestRunner) taskVerify(timeout time.Duration, appName string) {
+	fmt.Fprintf(getStyledWriter("test"), colors.PurpleUnderline(fmt.Sprintf("Attempting to verify whether the task some has deleted or not"))+"\n")
+	command := runner.command("delete-task", "some")
+
+	session, err := gexec.Start(command, getStyledWriter("delete-task"), getStyledWriter("delete-task"))
+
+	Expect(err).ToNot(HaveOccurred())
+	Eventually(session, timeout).Should(gexec.Exit(14))
 }
 
 //TODO: add subcommand string param
